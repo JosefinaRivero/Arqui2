@@ -1,0 +1,158 @@
+services:
+  # Frontend
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8080
+    depends_on:
+      - nginx
+
+  # Load Balancer
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - hotel-service-1
+      - hotel-service-2
+      - search-service-1
+      - search-service-2
+      - user-service-1
+      - user-service-2
+
+  # Hotel Service (2 instances for load balancing)
+  hotel-service-1:
+    build: ./hotel-service
+    container_name: hotel-service-1
+    environment:
+      - MONGO_URL=mongodb://mongodb:27017
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - PORT=8001
+    depends_on:
+      - mongodb
+      - rabbitmq
+
+  hotel-service-2:
+    build: ./hotel-service
+    container_name: hotel-service-2
+    environment:
+      - MONGO_URL=mongodb://mongodb:27017
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - PORT=8001
+    depends_on:
+      - mongodb
+      - rabbitmq
+
+  # Search Service (2 instances for load balancing)
+  search-service-1:
+    build: ./search-service
+    container_name: search-service-1
+    environment:
+      - SOLR_URL=http://solr:8983
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - HOTEL_SERVICE_URL=http://nginx/api/hotels
+      - USER_SERVICE_URL=http://nginx/api/users
+      - PORT=8002
+    depends_on:
+      - solr
+      - rabbitmq
+
+  search-service-2:
+    build: ./search-service
+    container_name: search-service-2
+    environment:
+      - SOLR_URL=http://solr:8983
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - HOTEL_SERVICE_URL=http://nginx/api/hotels
+      - USER_SERVICE_URL=http://nginx/api/users
+      - PORT=8002
+    depends_on:
+      - solr
+      - rabbitmq
+
+  # User Service (2 instances for load balancing)
+  user-service-1:
+    build: ./user-service
+    container_name: user-service-1
+    environment:
+      - MYSQL_URL=user:password@tcp(mysql:3306)/hotel_db
+      - MEMCACHED_URL=memcached:11211
+      - AMADEUS_CLIENT_ID=${AMADEUS_CLIENT_ID}
+      - AMADEUS_CLIENT_SECRET=${AMADEUS_CLIENT_SECRET}
+      - JWT_SECRET=your-jwt-secret-key
+      - PORT=8003
+    depends_on:
+      - mysql
+      - memcached
+
+  user-service-2:
+    build: ./user-service
+    container_name: user-service-2
+    environment:
+      - MYSQL_URL=user:password@tcp(mysql:3306)/hotel_db
+      - MEMCACHED_URL=memcached:11211
+      - AMADEUS_CLIENT_ID=${AMADEUS_CLIENT_ID}
+      - AMADEUS_CLIENT_SECRET=${AMADEUS_CLIENT_SECRET}
+      - JWT_SECRET=your-jwt-secret-key
+      - PORT=8003
+    depends_on:
+      - mysql
+      - memcached
+
+  # MongoDB
+  mongodb:
+    image: mongo:5.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+  # MySQL
+  mysql:
+    image: mysql:8.0
+    ports:
+      - "3307:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=hotel_db
+      - MYSQL_USER=user
+      - MYSQL_PASSWORD=password
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  # RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+
+  # Solr
+  solr:
+    image: solr:8.11
+    ports:
+      - "8983:8983"
+    volumes:
+      - solr_data:/var/solr
+    command:
+      - solr-precreate
+      - hotels
+
+  # Memcached
+  memcached:
+    image: memcached:1.6
+    ports:
+      - "11211:11211"
+
+volumes:
+  mongodb_data:
+  mysql_data:
+  solr_data:
