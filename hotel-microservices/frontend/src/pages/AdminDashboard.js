@@ -41,22 +41,24 @@ const AdminDashboard = () => {
   }, [activeTab]);
 
   const fetchHotels = async () => {
-    try {
-      setLoading(true);
-      const response = await hotelService.getHotels();
-      setHotels(response.data);
-    } catch (error) {
-      console.error('Error fetching hotels:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  try {
+    setLoading(true);
+    const response = await hotelService.getHotels();
+    setHotels(Array.isArray(response.data) ? response.data : []);
+  } catch (error) {
+    console.error('Error fetching hotels:', error);
+    setHotels([]);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const fetchUsers = async () => {
     try {
       setLoading(true);
       const response = await userService.getUsers();
-      setUsers(response.data);
+      setUsers(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error('Error fetching users:', error);
     } finally {
@@ -68,7 +70,7 @@ const AdminDashboard = () => {
     try {
       setLoading(true);
       const response = await reservationService.getReservations();
-      setReservations(response.data);
+      setReservations(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error('Error fetching reservations:', error);
     } finally {

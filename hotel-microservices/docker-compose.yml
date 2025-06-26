@@ -93,7 +93,7 @@ services:
     build: ./user-service
     container_name: user-service-2
     environment:
-      - MYSQL_URL=user:password@tcp(mysql:3306)/hotel_db
+      - MYSQL_URL=user:password@tcp(mysql:3306)/hotel_db      
       - MEMCACHED_URL=memcached:11211
       - AMADEUS_CLIENT_ID=${AMADEUS_CLIENT_ID}
       - AMADEUS_CLIENT_SECRET=${AMADEUS_CLIENT_SECRET}
@@ -124,6 +124,11 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      retries: 5
+ 
 
   # RabbitMQ
   rabbitmq:
