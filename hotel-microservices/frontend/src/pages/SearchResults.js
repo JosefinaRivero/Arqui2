@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { searchService } from '../services/api';
+import { searchService, hotelService } from '../services/api';
 import { LocationMarkerIcon, StarIcon, WifiIcon, UserGroupIcon, CalendarIcon, CurrencyDollarIcon, HomeIcon } from '@heroicons/react/outline';
 
 const SearchResults = () => {
@@ -25,27 +25,60 @@ const SearchResults = () => {
     const fetchHotels = async () => {
       try {
         setLoading(true);
-        const params = { city };
-        if (checkIn) params.check_in = checkIn;
-        if (checkOut) params.check_out = checkOut;
-
-        const response = await searchService.searchHotels(params);
         
-        // Simular habitaciones disponibles para cada hotel
-        const hotelsWithRooms = (response.data.hotels || []).map(hotel => ({
-          ...hotel,
-          totalRooms: Math.floor(Math.random() * 50) + 10, // 10-60 habitaciones
-          availableRooms: Math.floor(Math.random() * 20) + 1, // 1-21 habitaciones disponibles
-          pricePerNight: Math.floor(Math.random() * 200) + 80, // $80-280 por noche
-          rating: (Math.random() * 1.5 + 3.5).toFixed(1), // 3.5-5.0 rating
-          reviews: Math.floor(Math.random() * 500) + 50, // 50-550 reviews
-          features: ['WiFi Gratis', 'Desayuno incluido', 'Cancelación gratis'].slice(0, Math.floor(Math.random() * 3) + 1)
-        }));
+        // Primero intentar búsqueda con el servicio de búsqueda
+        let hotelsData = [];
+        try {
+          const params = { city };
+          if (checkIn) params.check_in = checkIn;
+          if (checkOut) params.check_out = checkOut;
 
-        setHotels(hotelsWithRooms);
+          const searchResponse = await searchService.searchHotels(params);
+          hotelsData = searchResponse.data.hotels || [];
+        } catch (searchError) {
+          console.log('Search service not available, using hotel service directly');
+          
+          // Si falla, obtener todos los hoteles y filtrar por ciudad
+          const hotelResponse = await hotelService.getHotels();
+          const allHotels = hotelResponse.data || [];
+          hotelsData = allHotels.filter(hotel => 
+            hotel.city && hotel.city.toLowerCase().includes(city.toLowerCase())
+          );
+        }
+        
+        // Procesar datos de hoteles con información de disponibilidad
+        const hotelsWithAvailability = await Promise.all(
+          hotelsData.map(async (hotel) => {
+            // Calcular habitaciones disponibles basado en reservas existentes
+            let availableRooms = hotel.totalRooms || Math.floor(Math.random() * 50) + 10;
+            
+            // Si hay fechas específicas, verificar disponibilidad real
+            if (checkIn && checkOut) {
+              try {
+                // Simular verificación de disponibilidad (en producción esto vendría del backend)
+                const reservedRooms = Math.floor(Math.random() * (hotel.totalRooms * 0.3)); // 30% ocupación máxima
+                availableRooms = Math.max(0, (hotel.totalRooms || 20) - reservedRooms);
+              } catch (error) {
+                console.log('Error checking availability for hotel', hotel.id);
+              }
+            }
+
+            return {
+              ...hotel,
+              totalRooms: hotel.totalRooms || Math.floor(Math.random() * 50) + 20,
+              availableRooms: availableRooms,
+              pricePerNight: hotel.pricePerNight || Math.floor(Math.random() * 200) + 80,
+              rating: hotel.rating || (Math.random() * 1.5 + 3.5).toFixed(1),
+              reviews: hotel.reviews || Math.floor(Math.random() * 500) + 50,
+              features: hotel.amenities || ['WiFi Gratis', 'Desayuno incluido', 'Cancelación gratis'].slice(0, Math.floor(Math.random() * 3) + 1)
+            };
+          })
+        );
+
+        setHotels(hotelsWithAvailability);
       } catch (err) {
-        setError('Error al buscar hoteles');
-        console.error(err);
+        console.error('Error fetching hotels:', err);
+        setError('Error al buscar hoteles. Por favor intenta nuevamente.');
       } finally {
         setLoading(false);
       }

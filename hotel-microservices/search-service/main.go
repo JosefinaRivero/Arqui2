@@ -104,11 +104,14 @@ func main() {
 
 	router := gin.Default()
 
-	// CORS middleware
+	// CORS middleware mejorado
 	router.Use(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
+		origin := c.Request.Header.Get("Origin")
+		c.Header("Access-Control-Allow-Origin", origin)
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, Origin, User-Agent, Cache-Control, Keep-Alive")
+		c.Header("Access-Control-Allow-Credentials", "true")
+		c.Header("Access-Control-Max-Age", "86400")
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
@@ -118,7 +121,6 @@ func main() {
 		c.Next()
 	})
 
-	// Search routes (accessible via /api/search from nginx)
 	router.GET("/search", service.searchHotels)
 
 	port := os.Getenv("PORT")

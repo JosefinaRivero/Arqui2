@@ -34,6 +34,9 @@ type Reservation struct {
 	HotelID   string    `json:"hotel_id" db:"hotel_id"`
 	CheckIn   time.Time `json:"check_in" db:"check_in"`
 	CheckOut  time.Time `json:"check_out" db:"check_out"`
+	Guests    int       `json:"guests" db:"guests"`
+	Rooms     int       `json:"rooms" db:"rooms"`
+	RoomType  string    `json:"room_type" db:"room_type"`
 	Status    string    `json:"status" db:"status"`
 	AmadeusID string    `json:"amadeus_id" db:"amadeus_id"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
@@ -105,21 +108,20 @@ func main() {
 
 		c.Next()
 	})
-
-	// Auth routes (accessible via /api/auth from nginx)
+	// Auth routes
 	router.POST("/auth/register", service.register)
 	router.POST("/auth/login", service.login)
 
-	// User routes (accessible via /api/users from nginx)
+	// User routes
 	router.GET("/users", service.authMiddleware(), service.getUsers)
 	router.GET("/users/:id", service.authMiddleware(), service.getUser)
 	router.GET("/users/:id/reservations", service.authMiddleware(), service.getUserReservations)
 
-	// Reservation routes (accessible via /api/reservations from nginx)
+	// Reservation routes
 	router.POST("/reservations", service.authMiddleware(), service.createReservation)
 	router.GET("/reservations", service.authMiddleware(), service.getReservations)
 
-	// Availability route (accessible via /api/availability from nginx)
+	// Availability route
 	router.GET("/availability", service.checkAvailability)
 
 	port := os.Getenv("PORT")
@@ -145,17 +147,20 @@ func (s *UserService) initDB() {
 
 	// Create reservations table
 	reservationTable := `
-	CREATE TABLE IF NOT EXISTS reservations (
-		id INT AUTO_INCREMENT PRIMARY KEY,
-		user_id INT NOT NULL,
-		hotel_id VARCHAR(50) NOT NULL,
-		check_in DATE NOT NULL,
-		check_out DATE NOT NULL,
-		status VARCHAR(20) DEFAULT 'pending',
-		amadeus_id VARCHAR(100),
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		FOREIGN KEY (user_id) REFERENCES users(id)
-	)`
+CREATE TABLE IF NOT EXISTS reservations (
+	id INT AUTO_INCREMENT PRIMARY KEY,
+	user_id INT NOT NULL,
+	hotel_id VARCHAR(50) NOT NULL,
+	check_in DATE NOT NULL,
+	check_out DATE NOT NULL,
+	guests INT DEFAULT 2,
+	rooms INT DEFAULT 1,
+	room_type VARCHAR(100),
+	status VARCHAR(20) DEFAULT 'pending',
+	amadeus_id VARCHAR(100),
+	created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY (user_id) REFERENCES users(id)
+)`
 
 	// Create hotel_mapping table for Amadeus ID mapping
 	mappingTable := `
@@ -359,8 +364,17 @@ func (s *UserService) checkAvailability(c *gin.Context) {
 	checkIn := c.Query("check_in")
 	checkOut := c.Query("check_out")
 
-	if hotelID == "" || checkIn == "" || checkOut == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing required parameters"})
+	if hotelID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing hotel_id parameter"})
+		return
+	}
+
+	// Si no hay fechas, asumir disponible
+	if checkIn == "" || checkOut == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"available": true,
+			"hotel_id":  hotelID,
+		})
 		return
 	}
 
@@ -379,7 +393,7 @@ func (s *UserService) checkAvailability(c *gin.Context) {
 	// Check database for existing reservations
 	var count int
 	err = s.db.QueryRow(
-		"SELECT COUNT(*) FROM reservations WHERE hotel_id = ? AND status = 'confirmed' AND ((check_in <= ? AND check_out > ?) OR (check_in < ? AND check_out >= ?))",
+		"SELECT COUNT(*) FROM reservations WHERE hotel_id = ? AND status IN ('confirmed', 'pending') AND ((check_in <= ? AND check_out > ?) OR (check_in < ? AND check_out >= ?))",
 		hotelID, checkIn, checkIn, checkOut, checkOut,
 	).Scan(&count)
 
@@ -412,22 +426,38 @@ func (s *UserService) createReservation(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	reservation.UserID = userID.(int)
 
-	// Validate with Amadeus
+	// Verificar disponibilidad antes de crear reserva
+	var count int
+	err := s.db.QueryRow(
+		"SELECT COUNT(*) FROM reservations WHERE hotel_id = ? AND status IN ('confirmed', 'pending') AND ((check_in <= ? AND check_out > ?) OR (check_in < ? AND check_out >= ?))",
+		reservation.HotelID, reservation.CheckIn, reservation.CheckIn, reservation.CheckOut, reservation.CheckOut,
+	).Scan(&count)
+
+	if err == nil && count > 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "Las fechas seleccionadas ya no están disponibles"})
+		return
+	}
+
+	// Validate with Amadeus if credentials available
 	if s.amadeusClientID != "" && s.amadeusSecret != "" {
+		log.Printf("Validating reservation with Amadeus for hotel %s", reservation.HotelID)
 		valid, amadeusID := s.validateWithAmadeus(reservation.HotelID, reservation.CheckIn, reservation.CheckOut)
 		if !valid {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Reservation not available"})
+			log.Printf("Amadeus validation failed for hotel %s", reservation.HotelID)
+			c.JSON(http.StatusConflict, gin.H{"error": "No hay disponibilidad según Amadeus"})
 			return
 		}
 		reservation.AmadeusID = amadeusID
 		reservation.Status = "confirmed"
+		log.Printf("Amadeus validation successful: %s", amadeusID)
 	} else {
-		reservation.Status = "pending"
+		log.Printf("Amadeus not configured, proceeding without validation")
+		reservation.Status = "confirmed"
 	}
 
 	result, err := s.db.Exec(
-		"INSERT INTO reservations (user_id, hotel_id, check_in, check_out, status, amadeus_id) VALUES (?, ?, ?, ?, ?, ?)",
-		reservation.UserID, reservation.HotelID, reservation.CheckIn, reservation.CheckOut, reservation.Status, reservation.AmadeusID,
+		"INSERT INTO reservations (user_id, hotel_id, check_in, check_out, guests, rooms, room_type, status, amadeus_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		reservation.UserID, reservation.HotelID, reservation.CheckIn, reservation.CheckOut, reservation.Guests, reservation.Rooms, reservation.RoomType, reservation.Status, reservation.AmadeusID,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -447,7 +477,8 @@ func (s *UserService) getReservations(c *gin.Context) {
 		return
 	}
 
-	rows, err := s.db.Query("SELECT id, user_id, hotel_id, check_in, check_out, status, amadeus_id, created_at FROM reservations")
+	rows, err := s.db.Query("SELECT id, user_id, hotel_id, check_in, check_out, guests, rooms, room_type, status, amadeus_id, created_at FROM reservations")
+
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -457,7 +488,8 @@ func (s *UserService) getReservations(c *gin.Context) {
 	var reservations []Reservation
 	for rows.Next() {
 		var reservation Reservation
-		err := rows.Scan(&reservation.ID, &reservation.UserID, &reservation.HotelID, &reservation.CheckIn, &reservation.CheckOut, &reservation.Status, &reservation.AmadeusID, &reservation.CreatedAt)
+		err := rows.Scan(&reservation.ID, &reservation.UserID, &reservation.HotelID, &reservation.CheckIn, &reservation.CheckOut, &reservation.Guests, &reservation.Rooms, &reservation.RoomType, &reservation.Status, &reservation.AmadeusID, &reservation.CreatedAt)
+
 		if err != nil {
 			continue
 		}
@@ -485,9 +517,10 @@ func (s *UserService) getUserReservations(c *gin.Context) {
 	}
 
 	rows, err := s.db.Query(
-		"SELECT id, user_id, hotel_id, check_in, check_out, status, amadeus_id, created_at FROM reservations WHERE user_id = ?",
+		"SELECT id, user_id, hotel_id, check_in, check_out, guests, rooms, room_type, status, amadeus_id, created_at FROM reservations WHERE user_id = ?",
 		userID,
 	)
+
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -497,7 +530,8 @@ func (s *UserService) getUserReservations(c *gin.Context) {
 	var reservations []Reservation
 	for rows.Next() {
 		var reservation Reservation
-		err := rows.Scan(&reservation.ID, &reservation.UserID, &reservation.HotelID, &reservation.CheckIn, &reservation.CheckOut, &reservation.Status, &reservation.AmadeusID, &reservation.CreatedAt)
+		err := rows.Scan(&reservation.ID, &reservation.UserID, &reservation.HotelID, &reservation.CheckIn, &reservation.CheckOut, &reservation.Guests, &reservation.Rooms, &reservation.RoomType, &reservation.Status, &reservation.AmadeusID, &reservation.CreatedAt)
+
 		if err != nil {
 			continue
 		}
@@ -508,6 +542,10 @@ func (s *UserService) getUserReservations(c *gin.Context) {
 }
 
 func (s *UserService) getAmadeusToken() (string, error) {
+	if s.amadeusClientID == "" || s.amadeusSecret == "" {
+		return "", fmt.Errorf("Amadeus credentials not configured")
+	}
+
 	data := fmt.Sprintf("grant_type=client_credentials&client_id=%s&client_secret=%s", s.amadeusClientID, s.amadeusSecret)
 
 	resp, err := http.Post("https://test.api.amadeus.com/v1/security/oauth2/token",
@@ -523,6 +561,8 @@ func (s *UserService) getAmadeusToken() (string, error) {
 		return "", err
 	}
 
+	log.Printf("Amadeus token response: %s", string(body))
+
 	var token AmadeusToken
 	if err := json.Unmarshal(body, &token); err != nil {
 		return "", err
@@ -536,16 +576,17 @@ func (s *UserService) validateWithAmadeus(hotelID string, checkIn, checkOut time
 	token, err := s.getAmadeusToken()
 	if err != nil {
 		log.Printf("Error getting Amadeus token: %v", err)
-		return false, ""
+		return true, "" // Si falla Amadeus, permitir reserva
 	}
 
 	// Get Amadeus hotel ID mapping
 	var amadeusID string
 	err = s.db.QueryRow("SELECT amadeus_id FROM hotel_mapping WHERE internal_id = ?", hotelID).Scan(&amadeusID)
 	if err != nil {
-		// If no mapping exists, create a dummy one for testing
-		amadeusID = "YXPARKPR" // Sample Amadeus hotel ID
-		s.db.Exec("INSERT INTO hotel_mapping (internal_id, amadeus_id) VALUES (?, ?)", hotelID, amadeusID)
+		// Si no hay mapping, crear uno basado en ciudad
+		amadeusID = "ADPAR001" // ID por defecto
+		s.db.Exec("INSERT IGNORE INTO hotel_mapping (internal_id, amadeus_id) VALUES (?, ?)", hotelID, amadeusID)
+		log.Printf("Created new hotel mapping: %s -> %s", hotelID, amadeusID)
 	}
 
 	// Check availability with Amadeus
@@ -554,22 +595,28 @@ func (s *UserService) validateWithAmadeus(hotelID string, checkIn, checkOut time
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return false, ""
+		log.Printf("Error creating Amadeus request: %v", err)
+		return true, amadeusID
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return false, ""
+		log.Printf("Error calling Amadeus API: %v", err)
+		return true, amadeusID // Si falla la conexión, permitir reserva
 	}
 	defer resp.Body.Close()
 
+	log.Printf("Amadeus API response status: %d", resp.StatusCode)
+
 	if resp.StatusCode == 200 {
-		// For simplicity, assume availability if we get a successful response
 		return true, amadeusID
+	} else if resp.StatusCode == 400 {
+		// No hay ofertas disponibles
+		return false, amadeusID
 	}
 
-	return false, ""
+	return true, amadeusID // Por defecto permitir si hay otros errores
 }

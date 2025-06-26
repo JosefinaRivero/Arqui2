@@ -27,7 +27,9 @@ const AdminDashboard = () => {
     city: '',
     address: '',
     amenities: '',
-    thumbnail: ''
+    thumbnail: '',
+    totalRooms: 20,
+    pricePerNight: 100
   });
 
   useEffect(() => {
@@ -41,24 +43,22 @@ const AdminDashboard = () => {
   }, [activeTab]);
 
   const fetchHotels = async () => {
-  try {
-    setLoading(true);
-    const response = await hotelService.getHotels();
-    setHotels(Array.isArray(response.data) ? response.data : []);
-  } catch (error) {
-    console.error('Error fetching hotels:', error);
-    setHotels([]);
-  } finally {
-    setLoading(false);
-  }
-};
-
+    try {
+      setLoading(true);
+      const response = await hotelService.getHotels();
+      setHotels(response.data);
+    } catch (error) {
+      console.error('Error fetching hotels:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
       setLoading(true);
       const response = await userService.getUsers();
-      setUsers(Array.isArray(response.data) ? response.data : []);
+      setUsers(response.data);
     } catch (error) {
       console.error('Error fetching users:', error);
     } finally {
@@ -70,7 +70,7 @@ const AdminDashboard = () => {
     try {
       setLoading(true);
       const response = await reservationService.getReservations();
-      setReservations(Array.isArray(response.data) ? response.data : []);
+      setReservations(response.data);
     } catch (error) {
       console.error('Error fetching reservations:', error);
     } finally {
@@ -86,7 +86,9 @@ const AdminDashboard = () => {
       city: '',
       address: '',
       amenities: '',
-      thumbnail: ''
+      thumbnail: '',
+      totalRooms: 20,
+      pricePerNight: 100
     });
     setShowHotelModal(true);
   };
@@ -99,7 +101,9 @@ const AdminDashboard = () => {
       city: hotel.city,
       address: hotel.address,
       amenities: hotel.amenities?.join(', ') || '',
-      thumbnail: hotel.thumbnail || ''
+      thumbnail: hotel.thumbnail || '',
+      totalRooms: hotel.totalRooms || 20,
+      pricePerNight: hotel.pricePerNight || 100
     });
     setShowHotelModal(true);
   };
@@ -109,7 +113,9 @@ const AdminDashboard = () => {
     try {
       const hotelData = {
         ...hotelForm,
-        amenities: hotelForm.amenities.split(',').map(a => a.trim()).filter(a => a)
+        amenities: hotelForm.amenities.split(',').map(a => a.trim()).filter(a => a),
+        totalRooms: parseInt(hotelForm.totalRooms),
+        pricePerNight: parseFloat(hotelForm.pricePerNight)
       };
 
       if (editingHotel) {
@@ -120,6 +126,7 @@ const AdminDashboard = () => {
 
       setShowHotelModal(false);
       fetchHotels();
+      alert('Hotel guardado exitosamente');
     } catch (error) {
       console.error('Error saving hotel:', error);
       alert('Error al guardar el hotel');
@@ -222,7 +229,11 @@ const AdminDashboard = () => {
                       <div className="p-4">
                         <h3 className="font-semibold text-gray-900 mb-1">{hotel.name}</h3>
                         <p className="text-gray-600 text-sm mb-2">{hotel.city}</p>
-                        <p className="text-gray-500 text-sm line-clamp-2 mb-4">{hotel.description}</p>
+                        <p className="text-gray-500 text-sm line-clamp-2 mb-2">{hotel.description}</p>
+                        <div className="flex justify-between text-xs text-gray-600 mb-4">
+                          <span>Habitaciones: {hotel.totalRooms || 'N/A'}</span>
+                          <span>Precio: ${hotel.pricePerNight || 'N/A'}/noche</span>
+                        </div>
                         
                         <div className="flex space-x-2">
                           <button
@@ -441,6 +452,38 @@ const AdminDashboard = () => {
                       type="text"
                       value={hotelForm.address}
                       onChange={(e) => setHotelForm({...hotelForm, address: e.target.value})}
+                      className="input-field"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Total de Habitaciones
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="200"
+                      value={hotelForm.totalRooms}
+                      onChange={(e) => setHotelForm({...hotelForm, totalRooms: e.target.value})}
+                      className="input-field"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Precio por Noche ($)
+                    </label>
+                    <input
+                      type="number"
+                      min="10"
+                      step="0.01"
+                      value={hotelForm.pricePerNight}
+                      onChange={(e) => setHotelForm({...hotelForm, pricePerNight: e.target.value})}
                       className="input-field"
                       required
                     />

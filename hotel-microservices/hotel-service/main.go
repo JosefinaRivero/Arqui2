@@ -17,17 +17,19 @@ import (
 )
 
 type Hotel struct {
-	ID          primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	Name        string             `bson:"name" json:"name"`
-	Description string             `bson:"description" json:"description"`
-	City        string             `bson:"city" json:"city"`
-	Address     string             `bson:"address" json:"address"`
-	Amenities   []string           `bson:"amenities" json:"amenities"`
-	Images      []string           `bson:"images" json:"images"`
-	Thumbnail   string             `bson:"thumbnail" json:"thumbnail"`
-	AmadeusID   string             `bson:"amadeus_id" json:"amadeus_id"`
-	CreatedAt   time.Time          `bson:"created_at" json:"created_at"`
-	UpdatedAt   time.Time          `bson:"updated_at" json:"updated_at"`
+	ID            primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	Name          string             `bson:"name" json:"name"`
+	Description   string             `bson:"description" json:"description"`
+	City          string             `bson:"city" json:"city"`
+	Address       string             `bson:"address" json:"address"`
+	Amenities     []string           `bson:"amenities" json:"amenities"`
+	Images        []string           `bson:"images" json:"images"`
+	Thumbnail     string             `bson:"thumbnail" json:"thumbnail"`
+	TotalRooms    int                `bson:"total_rooms" json:"totalRooms"`
+	PricePerNight float64            `bson:"price_per_night" json:"pricePerNight"`
+	AmadeusID     string             `bson:"amadeus_id" json:"amadeus_id"`
+	CreatedAt     time.Time          `bson:"created_at" json:"created_at"`
+	UpdatedAt     time.Time          `bson:"updated_at" json:"updated_at"`
 }
 
 type HotelService struct {

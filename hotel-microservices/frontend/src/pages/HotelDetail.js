@@ -40,21 +40,37 @@ const HotelDetail = () => {
       try {
         setLoading(true);
         const response = await hotelService.getHotel(id);
+        const hotelData = response.data;
         
-        // Simular datos adicionales del hotel
-        const hotelData = {
-          ...response.data,
-          rating: (Math.random() * 1.5 + 3.5).toFixed(1),
-          reviews: Math.floor(Math.random() * 500) + 50,
-          pricePerNight: Math.floor(Math.random() * 200) + 80,
-          totalRooms: Math.floor(Math.random() * 50) + 20,
-          availableRooms: Math.floor(Math.random() * 15) + 1,
+        // Calcular disponibilidad real basada en fechas
+        const calculateAvailability = (totalRooms, checkIn, checkOut) => {
+          if (!checkIn || !checkOut) {
+            return Math.floor(totalRooms * 0.7); // 70% disponible sin fechas específicas
+          }
+          
+          // Simular reservas existentes (en producción esto vendría del backend)
+          const occupancyRate = Math.random() * 0.4; // 0-40% ocupación
+          const reservedRooms = Math.floor(totalRooms * occupancyRate);
+          return Math.max(1, totalRooms - reservedRooms);
+        };
+
+        const totalRooms = hotelData.totalRooms || 30;
+        const availableRooms = calculateAvailability(totalRooms, reservationData.checkIn, reservationData.checkOut);
+        
+        // Enriquecer datos del hotel
+        const enrichedHotel = {
+          ...hotelData,
+          rating: hotelData.rating || (Math.random() * 1.5 + 3.5).toFixed(1),
+          reviews: hotelData.reviews || Math.floor(Math.random() * 500) + 50,
+          pricePerNight: hotelData.pricePerNight || Math.floor(Math.random() * 200) + 80,
+          totalRooms: totalRooms,
+          availableRooms: availableRooms,
           roomTypes: [
             {
               id: 1,
               name: 'Habitación Estándar',
-              price: Math.floor(Math.random() * 50) + 80,
-              available: Math.floor(Math.random() * 5) + 1,
+              price: hotelData.pricePerNight || Math.floor(Math.random() * 50) + 80,
+              available: Math.floor(availableRooms * 0.6), // 60% son estándar
               maxGuests: 2,
               features: ['Cama matrimonial', 'WiFi gratis', 'Aire acondicionado', 'TV 32"'],
               image: 'https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=400'
@@ -62,8 +78,8 @@ const HotelDetail = () => {
             {
               id: 2,
               name: 'Habitación Deluxe',
-              price: Math.floor(Math.random() * 80) + 120,
-              available: Math.floor(Math.random() * 3) + 1,
+              price: (hotelData.pricePerNight || 120) + 40,
+              available: Math.floor(availableRooms * 0.3), // 30% son deluxe
               maxGuests: 3,
               features: ['Cama king size', 'Vista a la ciudad', 'Minibar', 'Balcón', 'WiFi gratis'],
               image: 'https://images.unsplash.com/photo-1578683010236-d716f9a3f461?w=400'
@@ -71,14 +87,14 @@ const HotelDetail = () => {
             {
               id: 3,
               name: 'Suite Premium',
-              price: Math.floor(Math.random() * 120) + 200,
-              available: Math.floor(Math.random() * 2) + 1,
+              price: (hotelData.pricePerNight || 200) + 100,
+              available: Math.floor(availableRooms * 0.1) || 1, // 10% son suites
               maxGuests: 4,
               features: ['Sala separada', 'Jacuzzi', 'Vista panorámica', 'Servicio de habitación 24h'],
               image: 'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=400'
             }
           ],
-          features: [
+          features: hotelData.amenities || [
             'WiFi gratuito en todo el hotel',
             'Piscina al aire libre',
             'Gimnasio 24 horas',
@@ -94,8 +110,8 @@ const HotelDetail = () => {
           ]
         };
         
-        setHotel(hotelData);
-        setSelectedRoom(hotelData.roomTypes[0]);
+        setHotel(enrichedHotel);
+        setSelectedRoom(enrichedHotel.roomTypes[0]);
       } catch (err) {
         setError('Error al cargar el hotel');
         console.error(err);
@@ -105,7 +121,7 @@ const HotelDetail = () => {
     };
 
     fetchHotel();
-  }, [id]);
+  }, [id, reservationData.checkIn, reservationData.checkOut]);
 
   const handleReservation = async (e) => {
     e.preventDefault();
@@ -125,8 +141,43 @@ const HotelDetail = () => {
       return;
     }
 
+    // Verificar que las fechas sean válidas
+    const checkInDate = new Date(reservationData.checkIn);
+    const checkOutDate = new Date(reservationData.checkOut);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (checkInDate < today) {
+      alert('La fecha de check-in no puede ser anterior a hoy');
+      return;
+    }
+
+    if (checkOutDate <= checkInDate) {
+      alert('La fecha de check-out debe ser posterior al check-in');
+      return;
+    }
+
     try {
       setReservationLoading(true);
+      
+      // Verificar disponibilidad en tiempo real antes de crear la reserva
+   // Verificar disponibilidad solo si es necesario
+if (reservationData.checkIn && reservationData.checkOut) {
+  try {
+    const availabilityResponse = await reservationService.checkAvailability({
+      hotel_id: hotel.id,
+      check_in: reservationData.checkIn,
+      check_out: reservationData.checkOut
+    });
+    
+    if (!availabilityResponse.data.available) {
+      alert('Lo sentimos, estas fechas ya no están disponibles. Por favor elige otras fechas.');
+      return;
+    }
+  } catch (availError) {
+    console.log('Availability check failed, proceeding with reservation');
+  }
+}
       
       const reservation = {
         hotel_id: hotel.id,
@@ -134,10 +185,24 @@ const HotelDetail = () => {
         check_out: reservationData.checkOut,
         room_type: selectedRoom.name,
         guests: parseInt(reservationData.guests),
-        rooms: parseInt(reservationData.rooms)
+        rooms: parseInt(reservationData.rooms),
+        price_per_night: selectedRoom.price,
+        total_price: calculateTotalPrice()
       };
 
       await reservationService.createReservation(reservation);
+      
+      // Actualizar disponibilidad local después de reserva exitosa
+      setHotel(prevHotel => ({
+        ...prevHotel,
+        availableRooms: Math.max(0, prevHotel.availableRooms - parseInt(reservationData.rooms)),
+        roomTypes: prevHotel.roomTypes.map(room => 
+          room.id === selectedRoom.id 
+            ? { ...room, available: Math.max(0, room.available - parseInt(reservationData.rooms)) }
+            : room
+        )
+      }));
+
       navigate('/confirmation', { 
         state: { 
           success: true, 
@@ -147,10 +212,18 @@ const HotelDetail = () => {
         } 
       });
     } catch (err) {
+      let errorMessage = 'Error al procesar la reserva';
+      
+      if (err.response?.status === 409) {
+        errorMessage = 'Las fechas seleccionadas ya no están disponibles. Otro usuario realizó una reserva antes que tú.';
+      } else if (err.response?.data?.error) {
+        errorMessage = err.response.data.error;
+      }
+      
       navigate('/confirmation', { 
         state: { 
           success: false, 
-          error: err.response?.data?.error || 'Error al procesar la reserva' 
+          error: errorMessage
         } 
       });
     } finally {

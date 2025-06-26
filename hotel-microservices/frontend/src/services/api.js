@@ -51,13 +51,17 @@ export const searchService = {
 export const userService = {
   getUsers: () => api.get('/users'),
   getUser: (id) => api.get(`/users/${id}`),
-  getUserReservations: (id) => api.get(`/reservations/user/${id}`),
+  getUserReservations: (id) => api.get(`/users/${id}/reservations`),
 };
 
 export const reservationService = {
   createReservation: (reservation) => api.post('/reservations', reservation),
   getReservations: () => api.get('/reservations'),
   checkAvailability: (params) => api.get('/availability', { params }),
+  getHotelAvailability: (hotelId, checkIn, checkOut) => 
+    api.get(`/hotels/${hotelId}/availability`, { 
+      params: { check_in: checkIn, check_out: checkOut } 
+    }),
 };
 
 export default api;
